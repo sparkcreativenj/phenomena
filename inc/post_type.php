@@ -105,7 +105,7 @@ if (!is_admin()) {
 			$query_vars['meta_query'] = $mq;
 	
 			// Get-and-unset the 'order' query var
-			$order = phenomena_get($query_vars, 'order') ?? 'ASC';
+			$order = phenomena_get($query_vars, 'order') ?? 'DESC';
 			if (!$dummy_q->is_main_query()) {
 				if (isset($query->query_vars['order'])) {
 					unset($query->query_vars['order']);

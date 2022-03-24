@@ -77,7 +77,8 @@ if (!is_admin()) {
 	// This is designed to make events appear in a
 	// chronological order that makes intuitive sense.
 	add_action('request', function($query_vars) {
-		if (phenomena_get($query_vars, 'post_type') === PHENOMENA_POST_TYPE) {
+		$dummy_q = new WP_Query($query_vars);
+		if ($dummy_q->is_post_type_archive(PHENOMENA_POST_TYPE)) {
         		// This meta query will allow the "orderby" query var to
         		// order by event start and end timestamps.
 			$additional = [
@@ -91,7 +92,7 @@ if (!is_admin()) {
 				]
 			];
 
-			if (is_main_query()) {
+			if ($dummy_q->is_main_query()) {
 				$now = now_timestamptz();
 				$additional['event_start']['value'] = $now;
 				$additional['event_start']['compare'] = '>=';
@@ -105,7 +106,7 @@ if (!is_admin()) {
 	
 			// Get-and-unset the 'order' query var
 			$order = phenomena_get($query_vars, 'order') ?? 'ASC';
-			if (!is_main_query()) {
+			if (!$dummy_q->is_main_query()) {
 				if (isset($query->query_vars['order'])) {
 					unset($query->query_vars['order']);
 				}
@@ -131,12 +132,13 @@ if (!is_admin()) {
         if ($post_type === PHENOMENA_POST_TYPE) {
             $s = phenomena_get_start_date($post);
             $e = phenomena_get_end_date($post);
-            if ($s && $e) {
-                return date(date($d . ' - ', $s) . $d, $e);
+	    if ($s && $e) {
+		return $s->format($d) . ' - ' . $e->format($d);
+                //return date(date($d . ' - ', $s) . $d, $e);
             } else if ($e && !$s) {
-                return 'Ends ' . date($d, $e);
-            } else if ($s && !$e) {
-                return date($d, $s);
+                return 'Ends ' . $e->format($d);//date($d, $e);
+	    } else if ($s && !$e) {
+		return $s->format($d);
             }
             return date($d, phenomena_get_start_date($post));
         }

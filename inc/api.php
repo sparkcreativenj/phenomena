@@ -40,10 +40,21 @@ function phenomena_get_past_events($offset = 0, $count = 10) {
 	return phenomena_get_posts([
 		'post_status' => 'publish',
 		'post_type' => PHENOMENA_POST_TYPE,
-		'meta_key' => 'event_end_timestamp',
-		'meta_type' => 'DATETIME',
-		'meta_value' => $now,
-		'meta_compare' => '<=',
+		'meta_query' => [
+                    'relation' => 'OR',
+		    [
+			'key' => 'event_end_timestamp',
+			'type' => "DATETIME",
+			'value' => $now,
+			'compare' => '<='
+		    ],
+		    [
+			'key' => 'event_start_timestamp',
+			'type' => 'DATETIME',
+			'value' => $now,
+			'compare' => '>='
+		    ]
+		],
 		'order' => "ASC",
 		'orderby' => 'meta_value',
 		'posts_per_page' => $count,

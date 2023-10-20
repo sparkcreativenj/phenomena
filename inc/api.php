@@ -4,28 +4,53 @@
   Developer API
 */
 
+function phenomena_get_events($offset = 0, $count = 10, $past = false) {
+	if ($count == 0) return [];
 
-/*
- * phenomena_get_upcoming_events()
- * 
- * Returns an array of WP_Post objects representing upcoming events.
- *
- */
-function phenomena_get_upcoming_events($offset = 0, $count = 10) {
-	$now = now_timestamptz();    
+	$now = now_timestamptz();
 
-	return phenomena_get_posts([
+	$q = new WP_Query([
 		'post_status' => 'publish',
 		'post_type' => PHENOMENA_POST_TYPE,
-		'meta_key' => 'event_start_timestamp',
-		'meta_type' => 'DATETIME',
-		'meta_value' => $now,
-		'meta_compare' => '>=',
-		'order' => "ASC",
-		'orderby' => 'meta_value',
+		'meta_query' => [[
+			'relation' => 'OR',
+			'end_date_clause' => [
+				'relation' => 'AND',
+				'edc_end_exists' => [
+					'key' => 'event_end_timestamp',
+					'type' => 'DATETIME',
+					'compare' => 'EXISTS'
+				],
+				'edc_compare' => [
+					'key' => 'event_end_timestamp',
+					'type' => "DATETIME",
+					'value' => $now,
+					'compare' => $past ? '<' : '>='
+				]
+			],
+			'start_date_clause' => [
+				'relation' => 'AND',
+				'sdc_start_exists' => [
+					'key' => 'event_start_timestamp',
+					'type' => 'DATETIME',
+					'compare' => 'EXISTS'
+				],
+				'sdc_compare' => [
+					'key' => 'event_start_timestamp',
+					'type' => "DATETIME",
+					'value' => $now,
+					'compare' => $past ? "<" : '>='
+				]
+			],
+		]],
+		'orderby' => [
+			'edc_compare' => $past ? 'DESC' : "ASC",
+			'sdc_compare' => $past ? 'DESC' : 'ASC'
+		],
 		'posts_per_page' => $count,
 		'offset' => $offset
 	]);
+	return $q->get_posts();
 }
 
 /*
@@ -35,32 +60,19 @@ function phenomena_get_upcoming_events($offset = 0, $count = 10) {
  *
  */
 function phenomena_get_past_events($offset = 0, $count = 10) {
-	$now = now_timestamptz();    
-
-	return phenomena_get_posts([
-		'post_status' => 'publish',
-		'post_type' => PHENOMENA_POST_TYPE,
-		'meta_query' => [
-                    'relation' => 'OR',
-		    [
-			'key' => 'event_end_timestamp',
-			'type' => "DATETIME",
-			'value' => $now,
-			'compare' => '<='
-		    ],
-		    [
-			'key' => 'event_start_timestamp',
-			'type' => 'DATETIME',
-			'value' => $now,
-			'compare' => '>='
-		    ]
-		],
-		'order' => "ASC",
-		'orderby' => 'meta_value',
-		'posts_per_page' => $count,
-		'offset' => $offset
-	]);
+	return phenomena_get_events($offset, $count, true);
 }
+
+/*
+ * phenomena_get_upcoming_events()
+ * 
+ * Returns an array of WP_Post objects representing upcoming events.
+ *
+ */
+function phenomena_get_upcoming_events($offset = 0, $count = 10) {
+	return phenomena_get_events($offset, $count, false);
+}
+
 
 /*
  * phenomena_get_start_date($event)

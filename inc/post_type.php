@@ -77,14 +77,24 @@ if (!is_admin()) {
 	// This is designed to make events appear in a
 	// chronological order that makes intuitive sense.
 	add_action('request', function($query_vars) {
-		$dummy_q = new WP_Query($query_vars);
-		if ($dummy_q->is_post_type_archive(PHENOMENA_POST_TYPE)) {
+		$pt = polyphony_get($query_vars, 'post_type', []);
+
+		// Support normal WP and Polyphony queries alike
+		$is_archive = is_array($pt) ? $pt[0] === PHENOMENA_POST_TYPE : $pt === PHENOMENA_POST_TYPE;
+		if ($is_archive) {
         		// This meta query will allow the "orderby" query var to
         		// order by event start and end timestamps.
 			$additional = [
+				'relation' => "AND",
+				'start_timestamp_exists' => [
+					'key' => 'event_start_timestamp',
+					'compare' => 'EXISTS'
+				],
 				'event_start' => [
 					'key' => "event_start_timestamp",
-					'type' => 'DATETIME'
+					'type' => 'DATETIME',
+					'value' => now_timestamptz(),
+					'compare' => '>='
 				],
 				'event_end' => [
 					'key' => "event_end_timestamp",
@@ -92,24 +102,17 @@ if (!is_admin()) {
 				]
 			];
 
-			if ($dummy_q->is_main_query()) {
-				$now = now_timestamptz();
-				$additional['event_start']['value'] = $now;
-				$additional['event_start']['compare'] = '>=';
-			}
-
-		
 			// Safely insert the query into the meta_query
 			$mq = phenomena_get($query_vars, "meta_query");
-			$mq = $mq ? array_merge(['relation' => 'AND', $mq], $additional) : $additional;
-			$query_vars['meta_query'] = $mq;
+			if ($mq) {
+				$additional['original_meta_query'] = $mq;
+			}
+			$query_vars['meta_query'] = $additional;
 	
 			// Get-and-unset the 'order' query var
 			$order = phenomena_get($query_vars, 'order') ?? 'ASC';
-			if (!$dummy_q->is_main_query()) {
-				if (isset($query->query_vars['order'])) {
-					unset($query->query_vars['order']);
-				}
+			if (isset($query_vars['order'])) {
+				unset($query_vars['order']);
 			}
 
 			// create part of an orderby query that sorts by both start
@@ -121,10 +124,11 @@ if (!is_admin()) {
 			];
 			// Gracefully insert it, respecting other orderby's.
 			$ob = phenomena_get($query_vars, 'orderby');
-	    		$query_vars['orderby'] = $ob ? array_merge($ob, $addl_ob) : $addl_ob;
+			$query_vars['orderby'] = $ob ? array_merge($ob, $addl_ob) : $addl_ob;
+	 
 		}
 		return $query_vars;
-	});
+    });
 
     // Attempt to put the event date into most WordPress themes without modification.
     add_filter('get_the_date', function($the_date, $d, $post) {

@@ -79,8 +79,12 @@ if (!is_admin()) {
 	add_action('request', function($query_vars) {
 		$pt = phenomena_get($query_vars, 'post_type', []);
 
-		// Support normal WP and Polyphony queries alike
-		$is_archive = is_array($pt) ? $pt[0] === PHENOMENA_POST_TYPE : $pt === PHENOMENA_POST_TYPE;
+		// Polyphony theme support
+		if (is_array($pt)) {
+			$pt = count($pt) === 0 ? null : $pt[0];
+		}
+
+		$is_archive = $pt === PHENOMENA_POST_TYPE;
 		if ($is_archive) {
         		// This meta query will allow the "orderby" query var to
         		// order by event start and end timestamps.

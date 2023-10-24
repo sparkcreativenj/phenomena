@@ -18,7 +18,6 @@ function phenomena_get_events($offset = 0, $count = 10, $past = false) {
 				'relation' => 'AND',
 				'edc_end_exists' => [
 					'key' => 'event_end_timestamp',
-					'type' => 'DATETIME',
 					'compare' => 'EXISTS'
 				],
 				'edc_compare' => [
@@ -32,7 +31,6 @@ function phenomena_get_events($offset = 0, $count = 10, $past = false) {
 				'relation' => 'AND',
 				'sdc_start_exists' => [
 					'key' => 'event_start_timestamp',
-					'type' => 'DATETIME',
 					'compare' => 'EXISTS'
 				],
 				'sdc_compare' => [

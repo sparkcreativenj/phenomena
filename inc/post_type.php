@@ -79,7 +79,7 @@ if (!is_admin()) {
 	add_action('request', function($query_vars) {
 		$pt = phenomena_get($query_vars, 'post_type', []);
 
-		// Polyphony theme support
+		// Support Polyphony
 		if (is_array($pt)) {
 			$pt = count($pt) === 0 ? null : $pt[0];
 		}
@@ -89,20 +89,32 @@ if (!is_admin()) {
         		// This meta query will allow the "orderby" query var to
         		// order by event start and end timestamps.
 			$additional = [
-				'relation' => "AND",
-				'start_timestamp_exists' => [
-					'key' => 'event_start_timestamp',
-					'compare' => 'EXISTS'
+				'relation' => 'OR',
+				[
+					'relation' => "AND",
+					'start_timestamp_exists' => [
+						'key' => 'event_start_timestamp',
+						'compare' => 'EXISTS'
+					],
+					'event_start' => [
+						'key' => "event_start_timestamp",
+						'type' => 'DATETIME',
+						'value' => now_timestamptz(),
+						'compare' => '>='
+					],
 				],
-				'event_start' => [
-					'key' => "event_start_timestamp",
-					'type' => 'DATETIME',
-					'value' => now_timestamptz(),
-					'compare' => '>='
-				],
-				'event_end' => [
-					'key' => "event_end_timestamp",
-					'type' => 'DATETIME'
+				[
+					'relation' => "AND",
+					'end_timestamp_exists' => [
+						'key' => 'event_end_timestamp',
+						'compare' => 'EXISTS'
+					],
+					'event_end' => [
+						'key' => "event_end_timestamp",
+						'type' => 'DATETIME',
+						'value' => now_timestamptz(),
+						'compare' => '>='
+					],
 				]
 			];
 
@@ -119,16 +131,10 @@ if (!is_admin()) {
 				unset($query_vars['order']);
 			}
 
-			// create part of an orderby query that sorts by both start
-			// and end date. This keeps long-duration events higher up
-			// in the archive, but not quite at the top.
-			$addl_ob = [
-				'event_start' => $order,
-				'event_end' => $order === 'DESC' ? 'ASC' : 'DESC'
-			];
-			// Gracefully insert it, respecting other orderby's.
-			$ob = phenomena_get($query_vars, 'orderby');
-			$query_vars['orderby'] = $ob ? array_merge($ob, $addl_ob) : $addl_ob;
+			$ob = phenomena_get($query_vars, 'orderby', []);
+			$ob['event_start'] = $order;
+			$ob['event_end'] = $order === 'DESC' ? 'ASC' : 'DESC';
+			$query_vars['orderby'] = $ob;
 	 
 		}
 		return $query_vars;
@@ -154,29 +160,26 @@ if (!is_admin()) {
     }, 10, 3);
 } else {
 	// implements ordering by event_{start,end}_timestamp meta
-    // field as a query var. This is the desired behavior for the Admin
-    // posts listing.
+	// field as a query var. This is the desired behavior for the Admin
+	// posts listing.
 	add_action('request', function($query_vars) {
-    	// appends a clause (passed as $addition) to $query_vars in a way that
-    	// doesn't destroy/replace the original meta query (thus ensuring compat with
-    	// most other plugins).
-		function _phenomena_append_meta_query(&$query_vars, $addition, $relation = 'AND') {
-			$clause_name = phenomena_guid();
-			$mq = phenomena_get($query_vars, 'meta_query');
-			$mq = $mq ? ['relation' => $relation, $mq, $clause_name => $addition] : [$clause_name => $addition];
-			$query_vars['meta_query'] = $mq;
-			return $clause_name;
-		}
+		$orderby = phenomena_get($query_vars, 'orderby');
+		if ($orderby && in_array($orderby, ['event_start_timestamp', 'event_end_timestamp'])) {
+			$additional = [[
+				"meta_key" => $orderby,
+				"meta_type" => "DATETIME",
+				"orderby" => 'meta_value'
+			]];
 
-	    $orderby = phenomena_get($query_vars, 'orderby');
-	    if ($orderby && in_array($orderby, ['event_start_timestamp', 'event_end_timestamp'])) {
-			_phenomena_append_meta_query($query_vars, [
-			    "meta_key" => $orderby,
-			    "orderby" => 'meta_value'
-			], "AND");
+			// Safely insert the query into the meta_query
+			$mq = phenomena_get($query_vars, "meta_query");
+			if ($mq) {
+				$additional['original_meta_query'] = $mq;
+			}
+			$query_vars['meta_query'] = $additional;
 			unset($query_vars['orderby']);
-	    }
-	    return $query_vars;
+		}
+		return $query_vars;
 	});
 	
     (function() {

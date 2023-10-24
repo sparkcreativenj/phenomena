@@ -77,7 +77,7 @@ if (!is_admin()) {
 	// This is designed to make events appear in a
 	// chronological order that makes intuitive sense.
 	add_action('request', function($query_vars) {
-		$pt = polyphony_get($query_vars, 'post_type', []);
+		$pt = phenomena_get($query_vars, 'post_type', []);
 
 		// Support normal WP and Polyphony queries alike
 		$is_archive = is_array($pt) ? $pt[0] === PHENOMENA_POST_TYPE : $pt === PHENOMENA_POST_TYPE;

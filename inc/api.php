@@ -14,32 +14,33 @@ function phenomena_get_events($offset = 0, $count = 10, $past = false) {
 		'post_type' => PHENOMENA_POST_TYPE,
 		'meta_query' => [[
 			'relation' => 'OR',
-			'end_date_clause' => [
+/*			'end_date_clause' => [
 				'relation' => 'AND',
 				'edc_end_exists' => [
 					'key' => 'event_end_timestamp',
 					'compare' => 'EXISTS'
-				],
+				],*/
 				'edc_compare' => [
 					'key' => 'event_end_timestamp',
 					'type' => "DATETIME",
 					'value' => $now,
 					'compare' => $past ? '<' : '>='
-				]
+				],
+/*
 			],
 			'start_date_clause' => [
 				'relation' => 'AND',
 				'sdc_start_exists' => [
 					'key' => 'event_start_timestamp',
 					'compare' => 'EXISTS'
-				],
+				],*/
 				'sdc_compare' => [
 					'key' => 'event_start_timestamp',
 					'type' => "DATETIME",
 					'value' => $now,
 					'compare' => $past ? "<" : '>='
 				]
-			],
+		//	],
 		]],
 		'orderby' => [
 			'edc_compare' => $past ? 'DESC' : "ASC",

@@ -3,11 +3,10 @@
    Plugin Name: Phenomena
    Description: Simple events plugin.
    Plugin URI: https://github.com/natesymer/phenomena
-   Version: 0.0.1
+   Version: 0.1.0
    Author: Nate Symer
    Author URI: https://symer.io/
    License: MIT
-   Requires at least: 5.4
    Requires PHP: 7.4
 */
 

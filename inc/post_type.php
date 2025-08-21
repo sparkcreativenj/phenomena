@@ -90,32 +90,18 @@ if (!is_admin()) {
         		// order by event start and end timestamps.
 			$additional = [
 				'relation' => 'OR',
-/*				[
-					'relation' => "AND",
-					'start_timestamp_exists' => [
-						'key' => 'event_start_timestamp',
-						'compare' => 'EXISTS'
-					],*/
-					'event_start' => [
-						'key' => "event_start_timestamp",
-						'type' => 'DATETIME',
-						'value' => now_timestamptz(),
-						'compare' => '>='
-					],
-/*				],
-				[
-					'relation' => "AND",
-					'end_timestamp_exists' => [
-						'key' => 'event_end_timestamp',
-						'compare' => 'EXISTS'
-					],*/
-					'event_end' => [
-						'key' => "event_end_timestamp",
-						'type' => 'DATETIME',
-						'value' => now_timestamptz(),
-						'compare' => '>='
-					],
-			//	]
+				'event_start' => [
+					'key' => "event_start_timestamp",
+					'type' => 'DATETIME',
+					'value' => now_timestamptz(),
+					'compare' => '>='
+				],
+				'event_end' => [
+					'key' => "event_end_timestamp",
+					'type' => 'DATETIME',
+					'value' => now_timestamptz(),
+					'compare' => '>='
+				],
 			];
 
 			// Safely insert the query into the meta_query
@@ -148,7 +134,6 @@ if (!is_admin()) {
             $e = phenomena_get_end_date($post);
 	    if ($s && $e) {
 		return $s->format($d) . ' - ' . $e->format($d);
-                //return date(date($d . ' - ', $s) . $d, $e);
             } else if ($e && !$s) {
                 return 'Ends ' . $e->format($d);//date($d, $e);
 	    } else if ($s && !$e) {

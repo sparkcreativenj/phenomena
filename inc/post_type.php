@@ -23,48 +23,6 @@ if (!defined('PHENOMENA_EVENT_MENU_POSITION')) define('PHENOMENA_EVENT_MENU_POSI
 if (!defined('PHENOMENA_EVENT_CATEGORY_SLUG')) define('PHENOMENA_EVENT_CATEGORY_SLUG', 'event_category');
 
 add_action('init', function() {
-	register_block_type('phenomena/eventMetadata', [
-		'api_version' => 2,
-		'title' => "Event Metadata",
-		'description' => "Displays event metadata from Phenomena",
-		'category'        => 'widgets',
-		'icon'            => 'megaphone',
-		'supports'        => [
-			'align'     => ['wide', 'full'],
-			'anchor'    => true,
-			'className' => true,
-			'spacing'   => ['margin' => true, 'padding' => true],
-		],
-		'attributes' => [
-			'event_start_timestamp' => [
-				'type'   => 'string',
-				'source' => 'meta',
-				'meta'   => 'event_start_timestamp',
-			],
-			'event_start_timestamp' => [
-				'type'   => 'string',
-				'source' => 'meta',
-				'meta'   => 'event_start_timestamp',
-			],
-		],
-		'style' => 'phenomena-event-details',
-		'render_callback' => function(array $attributes, string $content, $block): string {
-			$wrapper = get_block_wrapper_attributes();
-
-			$s = phenomena_get_start_date($post);
-
-			$start = $attributes['event_start_timestamp'];			
-			$start = $start ? parse_utc_to_object($start) : null;
-			$start = $start ? $start->format() : null;
-
-			return sprintf(
-				'<div %s>%s</div>',
-				$wrapper,
-				$start ? $start : 'No Start date'
-			);
-		} 
-	]);
-
 	register_post_type(PHENOMENA_POST_TYPE, [
 		'labels'        => [
 			'name'          => __(PHENOMENA_EVENT_PLURAL),
@@ -111,6 +69,46 @@ add_action('init', function() {
 		],
 		'public' => true,
 		'show_in_rest' => true
+	]);
+
+	register_block_type('phenomena/eventMetadata', [
+		'api_version' => 2,
+		'title' => "Phenomena Event Metadata",
+		'category'        => 'widgets',
+		'icon'            => 'megaphone',
+		/*'supports'        => [
+			'align'     => ['wide', 'full'],
+			'anchor'    => true,
+			'className' => true,
+			'spacing'   => ['margin' => true, 'padding' => true],
+		],*/
+		'attributes' => [
+			'event_start_timestamp' => [
+				'type'   => 'string',
+				'source' => 'meta',
+				'meta'   => 'event_start_timestamp',
+			],
+			'event_start_timestamp' => [
+				'type'   => 'string',
+				'source' => 'meta',
+				'meta'   => 'event_start_timestamp',
+			],
+		],
+		'render_callback' => function(array $attributes, string $content, $block): string {
+			$wrapper = get_block_wrapper_attributes();
+
+			$s = phenomena_get_start_date($post);
+
+			$start = $attributes['event_start_timestamp'];			
+			$start = $start ? parse_utc_to_object($start) : null;
+			$start = $start ? $start->format() : null;
+
+			return sprintf(
+				'<div %s>%s</div>',
+				$wrapper,
+				$start ? $start : 'No Start date'
+			);
+		} 
 	]);
 });
 

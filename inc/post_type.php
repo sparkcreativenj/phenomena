@@ -22,6 +22,20 @@ if (!defined('PHENOMENA_EVENT_MENU_POSITION')) define('PHENOMENA_EVENT_MENU_POSI
 // Allow users to define a different taxonomy slug
 if (!defined('PHENOMENA_EVENT_CATEGORY_SLUG')) define('PHENOMENA_EVENT_CATEGORY_SLUG', 'event_category');
 
+function phenomena_event_runtime($post) {
+	$s = phenomena_get_start_date($post);
+	$e = phenomena_get_end_date($post);
+	if ($s && $e) {
+		return $s->format($d) . ' - ' . $e->format($d);
+	} else if ($e && !$s) {
+		return 'Ends ' . $e->format($d);//date($d, $e);
+	} else if ($s && !$e) {
+		return $s->format($d);
+	}
+
+	return null;
+}
+
 add_action('init', function() {
 	register_post_type(PHENOMENA_POST_TYPE, [
 		'labels'        => [
@@ -71,43 +85,143 @@ add_action('init', function() {
 		'show_in_rest' => true
 	]);
 
-	register_block_type('phenomena/eventMetadata', [
-		'api_version' => 2,
-		'title' => "Phenomena Event Metadata",
-		'category'        => 'widgets',
-		'icon'            => 'megaphone',
-		/*'supports'        => [
-			'align'     => ['wide', 'full'],
-			'anchor'    => true,
-			'className' => true,
-			'spacing'   => ['margin' => true, 'padding' => true],
-		],*/
+	wp_register_script(
+		'event-metadata-handle',
+		false, // no src file
+		['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-hooks'], // TODO: verify that this works
+		null,
+		true
+	);
+
+	wp_add_inline_script('event-metadata-handle', <<<'JS'
+(function({blocks, hooks, blockEditor, element, components}) {
+	const { createElement: el, Fragment } = element;
+	const { useBlockProps, InspectorControls } = blockEditor;
+	const { PanelBody, TextControl } = components;
+
+	function Edit({ attributes, setAttributes }) {
+		const blockProps = useBlockProps({ className: 'phenomena-event-metadata' });
+
+		return el(
+			Fragment,
+			null,
+			el(
+				InspectorControls,
+				null,
+				null
+			),
+			el('div', { ...blockProps }, el('h2', {style: {/*textAlign: 'center'*/}}, "Event Metadata"))
+		);
+	}
+
+	blocks.registerBlockType('phenomena/event-metadata', {
+		edit: Edit,
+		save: () => null /* dynamic block */
+	});
+})(window.wp);
+JS, 'after');
+
+	register_block_type('phenomena/event-metadata', [
+		'api_version' => 3,
+		'title' => "Event Metadata",
+		'category' => 'text',
+		'icon' => 'admin-site',
+		'supports' => [
+			'inserter' => true,
+			'align' => [
+				'wide',
+				'full'
+			],
+			'spacing' => [
+				'margin' => true,
+				'padding' => true
+			],
+			'typography' => [
+				'fontSize' => true,
+      				"lineHeight" => true,
+      "letterSpacing" => true,
+      "textDecoration" => true,
+      "textTransform" => true,
+      "fontStyle" => true,
+      "fontWeight" => true
+			],
+			'color' => true,
+			'typography' => true,
+		/*	'anchor' => false,
+			'customClassName' => false,
+			'html' => false,*/
+		],
 		'attributes' => [
 			'event_start_timestamp' => [
 				'type'   => 'string',
 				'source' => 'meta',
 				'meta'   => 'event_start_timestamp',
 			],
-			'event_start_timestamp' => [
+			'event_end_timestamp' => [
 				'type'   => 'string',
 				'source' => 'meta',
-				'meta'   => 'event_start_timestamp',
+				'meta'   => 'event_end_timestamp',
 			],
 		],
-		'render_callback' => function(array $attributes, string $content, $block): string {
-			$wrapper = get_block_wrapper_attributes();
+		'editor_script_handles' => [
+			'event-metadata-handle'
+		],
+		'render_callback' => function($attributes, $content) {
+			global $post;
+			$city = phenomena_get_city($post);
+                        $state = phenomena_get_state($post);
+                        $country = phenomena_get_country($post);
+                        $street = phenomena_get_street($post);
+                        $zip = phenomena_get_zip($post);
+			$loc_name = phenomena_get_location_name($post);
+			$more_info = phenomena_get_more_info_url($post);
 
-			$s = phenomena_get_start_date($post);
+			$start = phenomena_get_start_date($post);
+			$end = phenomena_get_end_date($post);
+			
+			$date_format = get_option('date_format') . ' ' . get_option('time_format');
 
-			$start = $attributes['event_start_timestamp'];			
-			$start = $start ? parse_utc_to_object($start) : null;
-			$start = $start ? $start->format() : null;
+			$timing = '';
 
-			return sprintf(
-				'<div %s>%s</div>',
-				$wrapper,
-				$start ? $start : 'No Start date'
-			);
+			if ($start && $end) {
+				$is_one_day = $start->format('Y-m-d') === $end->format('Y-m-d');
+				if ($is_one_day) {
+					$timing = $start->format(get_option('date_format')) . ' // ' . $start->format(get_option('time_format')) . ' - ' . $end->format(get_option('time_format'));
+				} else {
+					$timing = $start->format($date_format) . ' - ' . $end->format($date_format);
+				}
+			} else if ($start) {
+				$timing = "Starts " . $start->format($date_format);
+			} else if ($end) {
+				$timing = "Ends " . $end->format($date_format);
+			} else {
+				// noop
+			}
+
+			$address = join(', ', [$street, $city, $state, $country, $zip]);
+			$google_maps_link = 'https://www.google.com/maps/search/?api=1&query=' . urlencode( $address );
+
+			ob_start();
+?>
+	<div <?= get_block_wrapper_attributes(['style' => 'display: flex; flex-flow: column nowrap; ']); ?>>
+			<span class="event-timing">
+				<?= $timing; ?>
+			</span>
+			<?php if ($google_maps_link) { ?>
+				<a target='_blank' href="<?= $google_maps_link; ?>"><?= $loc_name ? $loc_name : 'Google Maps'; ?></a>
+			<?php } else if ($loc_name) { ?>
+				<span><?= $loc_name; ?></span>
+			<?php } ?>
+
+			<?php if ($more_info) { ?>
+				<a target="_blank" href="<?= $more_info; ?>">more info</a>
+			<?php } ?>
+	</div>
+<?php
+			$contents = ob_get_contents();
+			ob_end_clean();
+
+			return $contents;
 		} 
 	]);
 });
@@ -124,7 +238,7 @@ if (!is_admin()) {
 			$pt = count($pt) === 0 ? null : $pt[0];
 		}
 
-		$is_archive = $pt === PHENOMENA_POST_TYPE;
+		$is_archive = $pt === PHENOMENA_POST_TYPE && !isset($query_vars[PHENOMENA_POST_TYPE]);
 		if ($is_archive) {
         		// This meta query will allow the "orderby" query var to
         		// order by event start and end timestamps.
@@ -206,18 +320,18 @@ if (!is_admin()) {
 		}
 		return $query_vars;
 	});
-	
-    (function() {
-    	$bn = basename(__FILE__);
+
+	(function() {
+		$bn = basename(__FILE__);
 		$box_key = 'phenomena_event_metadata';
     	
 		add_action('save_post', function($post_id) use ($bn, $box_key) {
-		    if (defined("DOING_AUTOSAVE") && DOING_AUTOSAVE) return;
+			if (defined("DOING_AUTOSAVE") && DOING_AUTOSAVE) return;
 		
-		    global $post_data;
-		    if ($post_data) $data = $post_data;
-		    else if ($_POST) $data = $_POST;
-		    else if ($_GET) $data = $_GET;
+			global $post_data;
+			if ($post_data) $data = $post_data;
+			else if ($_POST) $data = $_POST;
+			else if ($_GET) $data = $_GET;
     	
 			if (current_user_can('edit_post', $post_id)
 				&& PHENOMENA_POST_TYPE === get_post_type($post_id)
@@ -242,20 +356,20 @@ if (!is_admin()) {
 			}
 		});
     	
-    	add_action('add_meta_boxes', function() use ($box_key, $bn) {
-    		add_meta_box($box_key, "Event Details", function() use ($bn, $box_key) {
-    			function render_text_field($name, $value, $label, $type='text') {
+		add_action('add_meta_boxes', function() use ($box_key, $bn) {
+    			add_meta_box($box_key, "Event Details", function() use ($bn, $box_key) {
+				function render_text_field($name, $value, $label, $type='text') {
     			?>
     			<div style="display: flex; flex-flow: column nowrap; align-items: flex-start;">
     			    <div style="padding-bottom: 5px"><?= $label; ?></div>
     			    <input type="<?= $type; ?>" name="<?= $name; ?>" value="<?= $value; ?>">
     			</div>
     			<?php
-    			}
+    				}
     	
-    	        wp_nonce_field($bn, $box_key . '_nonce');
+				wp_nonce_field($bn, $box_key . '_nonce');
     	
-    	        global $post;
+				global $post;
     			
     			$post_id = $post->ID;
     			$start = get_post_meta($post_id, 'event_start_timestamp', true);

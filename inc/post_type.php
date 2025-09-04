@@ -88,13 +88,13 @@ add_action('init', function() {
 	wp_register_script(
 		'event-metadata-handle',
 		false, // no src file
-		['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-hooks'], // TODO: verify that this works
+		['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'],
 		null,
 		true
 	);
 
 	wp_add_inline_script('event-metadata-handle', <<<'JS'
-(function({blocks, hooks, blockEditor, element, components}) {
+(function({blocks, blockEditor, element, components}) {
 	const { createElement: el, Fragment } = element;
 	const { useBlockProps, InspectorControls } = blockEditor;
 	const { PanelBody, TextControl } = components;
@@ -102,21 +102,17 @@ add_action('init', function() {
 	function Edit({ attributes, setAttributes }) {
 		const blockProps = useBlockProps({ className: 'phenomena-event-metadata' });
 
-		return el(
-			Fragment,
-			null,
-			el(
-				InspectorControls,
-				null,
-				null
-			),
-			el('div', { ...blockProps }, el('h2', {style: {/*textAlign: 'center'*/}}, "Event Metadata"))
-		);
+		return el(Fragment, null, ...[
+			el(InspectorControls),
+			el('div', { ...blockProps }, ...[
+				el('h2', {style: {/*textAlign: 'center'*/}}, "Event Information")
+			])
+		]);
 	}
 
 	blocks.registerBlockType('phenomena/event-metadata', {
 		edit: Edit,
-		save: () => null /* dynamic block */
+		save: () => null // dynamic block
 	});
 })(window.wp);
 JS, 'after');
@@ -139,17 +135,14 @@ JS, 'after');
 			'typography' => [
 				'fontSize' => true,
       				"lineHeight" => true,
-      "letterSpacing" => true,
-      "textDecoration" => true,
-      "textTransform" => true,
-      "fontStyle" => true,
-      "fontWeight" => true
+				"letterSpacing" => true,
+				"textDecoration" => true,
+				"textTransform" => true,
+				"fontStyle" => true,
+				"fontWeight" => true
 			],
 			'color' => true,
-			'typography' => true,
-		/*	'anchor' => false,
-			'customClassName' => false,
-			'html' => false,*/
+			'html' => false
 		],
 		'attributes' => [
 			'event_start_timestamp' => [
@@ -204,7 +197,7 @@ JS, 'after');
 			ob_start();
 ?>
 	<div <?= get_block_wrapper_attributes(['style' => 'display: flex; flex-flow: column nowrap; ']); ?>>
-			<span class="event-timing">
+			<span class="event-timing" style="font-weight: bold; font-size: 1.5em;">
 				<?= $timing; ?>
 			</span>
 			<?php if ($google_maps_link) { ?>

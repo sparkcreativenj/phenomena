@@ -22,20 +22,6 @@ if (!defined('PHENOMENA_EVENT_MENU_POSITION')) define('PHENOMENA_EVENT_MENU_POSI
 // Allow users to define a different taxonomy slug
 if (!defined('PHENOMENA_EVENT_CATEGORY_SLUG')) define('PHENOMENA_EVENT_CATEGORY_SLUG', 'event_category');
 
-function phenomena_event_runtime($post) {
-	$s = phenomena_get_start_date($post);
-	$e = phenomena_get_end_date($post);
-	if ($s && $e) {
-		return $s->format($d) . ' - ' . $e->format($d);
-	} else if ($e && !$s) {
-		return 'Ends ' . $e->format($d);//date($d, $e);
-	} else if ($s && !$e) {
-		return $s->format($d);
-	}
-
-	return null;
-}
-
 add_action('init', function() {
 	register_post_type(PHENOMENA_POST_TYPE, [
 		'labels'        => [
@@ -85,44 +71,18 @@ add_action('init', function() {
 		'show_in_rest' => true
 	]);
 
-	wp_register_script(
-		'event-metadata-handle',
-		false, // no src file
-		['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'],
-		null,
-		true
-	);
-
-	wp_add_inline_script('event-metadata-handle', <<<'JS'
-(function({blocks, blockEditor, element, components}) {
-	const { createElement: el, Fragment } = element;
-	const { useBlockProps, InspectorControls } = blockEditor;
-	const { PanelBody, TextControl } = components;
-
-	function Edit({ attributes, setAttributes }) {
-		const blockProps = useBlockProps({ className: 'phenomena-event-metadata' });
-
-		return el(Fragment, null, ...[
-			el(InspectorControls),
-			el('div', { ...blockProps }, ...[
-				el('h2', {style: {/*textAlign: 'center'*/}}, "Event Information")
-			])
-		]);
+	function _phenomena_register_inline_script($handle, $deps, $script) {
+		wp_register_script(
+			$handle,
+			false, // no src file
+			$deps,
+			null,
+			true
+		);
+		wp_add_inline_script($handle, $script, 'after');
 	}
 
-	blocks.registerBlockType('phenomena/event-metadata', {
-		edit: Edit,
-		save: () => null // dynamic block
-	});
-})(window.wp);
-JS, 'after');
-
-	register_block_type('phenomena/event-metadata', [
-		'api_version' => 3,
-		'title' => "Event Metadata",
-		'category' => 'text',
-		'icon' => 'admin-site',
-		'supports' => [
+	$supports = [
 			'inserter' => true,
 			'align' => [
 				'wide',
@@ -133,17 +93,57 @@ JS, 'after');
 				'padding' => true
 			],
 			'typography' => [
+				'fontFamily' => true,
 				'fontSize' => true,
       				"lineHeight" => true,
 				"letterSpacing" => true,
 				"textDecoration" => true,
 				"textTransform" => true,
 				"fontStyle" => true,
-				"fontWeight" => true
+				"fontWeight" => true,
+				"__experimentalFontFamily" => true,
+				"__experimentalFontStyle" => true,
+				"__experimentalFontWeight" => true,
+				"__experimentalLetterSpacing" => true,
+				"__experimentalTextDecoration" => true,
+				"__experimentalTextTransform" => true,
+				"__experimentalWritingMode" => true
 			],
 			'color' => true,
 			'html' => false
-		],
+		];
+
+	_phenomena_register_inline_script(
+		'phenomena-block-event-timing',
+		['wp-blocks', 'wp-element', 'wp-block-editor'], <<<'JS'
+(function({blocks, blockEditor, element}) {
+	const { createElement: el, Fragment } = element;
+	const { useBlockProps, InspectorControls } = blockEditor;
+
+	function Edit({ attributes, setAttributes }) {
+		const blockProps = useBlockProps({ className: 'phenomena-block-event-timing' });
+
+		return el(Fragment, null, ...[
+			el(InspectorControls),
+			el('div', { ...blockProps }, ...[
+				el('h2', {}, "Event Timing")
+			])
+		]);
+	}
+
+	blocks.registerBlockType('phenomena/event-timing', {
+		edit: Edit,
+		save: () => null // dynamic block
+	});
+})(window.wp);
+JS);
+
+	register_block_type('phenomena/event-timing', [
+		'api_version' => 3,
+		'title' => "Event Timing",
+		'category' => 'text',
+		'icon' => 'admin-site',
+		'supports' => $supports,
 		'attributes' => [
 			'event_start_timestamp' => [
 				'type'   => 'string',
@@ -157,18 +157,10 @@ JS, 'after');
 			],
 		],
 		'editor_script_handles' => [
-			'event-metadata-handle'
+			'phenomena-block-event-timing'
 		],
 		'render_callback' => function($attributes, $content) {
 			global $post;
-			$city = phenomena_get_city($post);
-                        $state = phenomena_get_state($post);
-                        $country = phenomena_get_country($post);
-                        $street = phenomena_get_street($post);
-                        $zip = phenomena_get_zip($post);
-			$loc_name = phenomena_get_location_name($post);
-			$more_info = phenomena_get_more_info_url($post);
-
 			$start = phenomena_get_start_date($post);
 			$end = phenomena_get_end_date($post);
 			
@@ -191,23 +183,74 @@ JS, 'after');
 				// noop
 			}
 
+			ob_start();
+?>
+	<div <?= get_block_wrapper_attributes(); ?>><?= $timing; ?></div>
+<?php
+			$contents = ob_get_contents();
+			ob_end_clean();
+
+			return $contents;
+		} 
+	]);
+
+
+	_phenomena_register_inline_script(
+		'phenomena-block-event-location',
+		['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'], <<<'JS'
+(function({blocks, blockEditor, element, components}) {
+	const { createElement: el, Fragment } = element;
+	const { useBlockProps, InspectorControls } = blockEditor;
+	const { PanelBody, TextControl } = components;
+
+	function Edit({ attributes, setAttributes }) {
+		const blockProps = useBlockProps({ className: 'phenomena-block-event-timing' });
+
+		return el(Fragment, null, ...[
+			el(InspectorControls),
+			el('div', { ...blockProps }, ...[
+				el('h2', {}, "Event Location")
+			])
+		]);
+	}
+
+	blocks.registerBlockType('phenomena/event-location', {
+		edit: Edit,
+		save: () => null // dynamic block
+	});
+})(window.wp);
+JS);
+
+
+	register_block_type('phenomena/event-location', [
+		'api_version' => 3,
+		'title' => "Event Location",
+		'category' => 'text',
+		'icon' => 'admin-site',
+		'supports' => $supports,
+		'attributes' => [],
+		'editor_script_handles' => [
+			'phenomena-block-event-location'
+		],
+		'render_callback' => function($attributes, $content) {
+			global $post;
+			$city = phenomena_get_city($post);
+                        $state = phenomena_get_state($post);
+                        $country = phenomena_get_country($post);
+                        $street = phenomena_get_street($post);
+                        $zip = phenomena_get_zip($post);
+			$loc_name = phenomena_get_location_name($post);
+
 			$address = join(', ', [$street, $city, $state, $country, $zip]);
 			$google_maps_link = 'https://www.google.com/maps/search/?api=1&query=' . urlencode( $address );
 
 			ob_start();
 ?>
-	<div <?= get_block_wrapper_attributes(['style' => 'display: flex; flex-flow: column nowrap; ']); ?>>
-			<span class="event-timing" style="font-weight: bold; font-size: 1.5em;">
-				<?= $timing; ?>
-			</span>
+	<div <?= get_block_wrapper_attributes(); ?>>
 			<?php if ($google_maps_link) { ?>
 				<a target='_blank' href="<?= $google_maps_link; ?>"><?= $loc_name ? $loc_name : 'Google Maps'; ?></a>
 			<?php } else if ($loc_name) { ?>
 				<span><?= $loc_name; ?></span>
-			<?php } ?>
-
-			<?php if ($more_info) { ?>
-				<a target="_blank" href="<?= $more_info; ?>">more info</a>
 			<?php } ?>
 	</div>
 <?php

@@ -130,8 +130,8 @@ function phenomena_get_zip($event) {
 	return phenomena_get_post_meta($event, 'event_zip');
 }
 
-function phenomena_get_more_info_url($event) {
+function phenomena_get_tickets_url($event) {
 	if (!$event) return null;
-	return phenomena_get_post_meta($event, 'event_more_info_url');
+	return phenomena_get_post_meta($event, 'event_tickets_url');
 }
 

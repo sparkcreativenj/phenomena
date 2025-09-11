@@ -14,4 +14,4 @@ require_once __DIR__ . '/inc/utilities.php';
 require_once __DIR__ . '/inc/time.php';
 require_once __DIR__ . '/inc/post_type.php';
 require_once __DIR__ . '/inc/api.php';
-
+require_once __DIR__ . '/inc/yoast.php';

@@ -22,6 +22,18 @@ if (!defined('PHENOMENA_EVENT_MENU_POSITION')) define('PHENOMENA_EVENT_MENU_POSI
 // Allow users to define a different taxonomy slug
 if (!defined('PHENOMENA_EVENT_CATEGORY_SLUG')) define('PHENOMENA_EVENT_CATEGORY_SLUG', 'event_category');
 
+function _phenomena_register_inline_script($handle, $deps, $script) {
+	wp_register_script(
+		$handle,
+		false, // no src file
+		$deps,
+		mt_rand(),
+		true
+	);
+	wp_add_inline_script($handle, $script, 'after');
+	wp_enqueue_script($handle);
+}
+
 add_action('init', function() {
 	register_post_type(PHENOMENA_POST_TYPE, [
 		'labels'        => [
@@ -45,6 +57,47 @@ add_action('init', function() {
 	        'show_in_rest'  => true,
 		'has_archive'   => true
 	]);
+
+	register_post_meta(PHENOMENA_POST_TYPE, 'event_tickets_url', [
+		'type' => 'string',
+		'single' => true,
+		'show_in_rest' => true,
+		'sanitize_callback' => 'esc_url_raw',
+		'auth_callback' => fn() => current_user_can('edit_posts'),
+		'default' => '',
+	]);
+
+	foreach (['event_start_timestamp', 'event_end_timestamp'] as $key) {
+		register_post_meta(PHENOMENA_POST_TYPE, $key, [
+			'type' => 'string',
+			'single' => true,
+
+			// takes ISO8601 and converts it back to internal format
+			'sanitize_callback' => function($value) {
+				$dt = phenomena_parse_iso8601_date($value);
+				return phenomena_format_internal($dt);
+			},
+			'show_in_rest' => [
+				// Renders internal time (utc) to ISO8601 with timezone
+				'prepare_callback' => function($value) {
+					$dt = phenomena_parse_internal_date($value);
+					return phenomena_format_iso8601($dt);
+				}
+			],
+			'auth_callback' => fn() => current_user_can('edit_posts'),
+			'default' => '',
+		]);
+	}
+
+	foreach (['event_location_name', 'event_city', 'event_state', 'event_country', 'event_street', 'event_zip'] as $key) {
+		register_post_meta(PHENOMENA_POST_TYPE, $key, [
+			'type' => 'string',
+			'single' => true,
+			'auth_callback' => fn() => current_user_can('edit_posts'),
+			'default' => '',
+			'show_in_rest' => true
+		]);
+	}
 
 	register_taxonomy(PHENOMENA_EVENT_CATEGORY_SLUG, PHENOMENA_POST_TYPE, [
 		'labels' => [
@@ -70,17 +123,6 @@ add_action('init', function() {
 		'public' => true,
 		'show_in_rest' => true
 	]);
-
-	function _phenomena_register_inline_script($handle, $deps, $script) {
-		wp_register_script(
-			$handle,
-			false, // no src file
-			$deps,
-			null,
-			true
-		);
-		wp_add_inline_script($handle, $script, 'after');
-	}
 
 	$supports = [
 			'inserter' => true,
@@ -260,7 +302,202 @@ JS);
 			return $contents;
 		} 
 	]);
+
+	_phenomena_register_inline_script(
+		'phenomena-block-event-tickets',
+		['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'], <<<'JS'
+(function({blocks, blockEditor, element, components}) {
+	const { createElement: el, Fragment } = element;
+	const { useBlockProps, InspectorControls } = blockEditor;
+	const { PanelBody, TextControl } = components;
+
+	function Edit({ attributes, setAttributes }) {
+		const blockProps = useBlockProps({style: {display: 'block'}});
+
+		return el(Fragment, null, ...[
+			el(InspectorControls),
+			el('a', { ...blockProps }, 'Tickets Link')
+		]);
+	}
+
+	blocks.registerBlockType('phenomena/event-tickets', {
+		edit: Edit,
+		save: () => null // dynamic block
+	});
+})(window.wp);
+JS);
+
+	register_block_type('phenomena/event-tickets', [
+		'api_version' => 3,
+		'title' => "Event Tickets Link",
+		'category' => 'text',
+		'icon' => 'admin-site',
+		'supports' => $supports,
+		'attributes' => [
+			'event_tickets_url' => [
+				'type'   => 'string',
+				'source' => 'meta',
+				'meta'   => 'event_tickets_url',
+			],
+		],
+		'editor_script_handles' => [
+			'phenomena-block-event-tickets'
+		],
+		'render_callback' => function($attributes, $content) {
+			global $post;
+			$url = phenomena_get_tickets_url($post);
+
+			ob_start();
+			if ($url) {
+?>
+	<a <?= get_block_wrapper_attributes(["style" => "display: inline-block;"]); ?> href="<?= $url; ?>" target="_blank">Tickets</a>
+<?php
+			}
+			$contents = ob_get_contents();
+			ob_end_clean();
+
+			return $contents;
+		} 
+	]);
+
 });
+
+add_action('enqueue_block_editor_assets', function() {
+		_phenomena_register_inline_script('phenomena_event_meta', ['wp-plugins','wp-edit-post','wp-components','wp-data','wp-core-data','wp-element'], <<<'JS'
+(function() {
+	const { registerPlugin } = wp.plugins;
+	const { PluginDocumentSettingPanel, store: editorStore } = wp.editor;
+	const { DateTimePicker, TextControl, BaseControl } = wp.components;
+	const { useSelect } = wp.data;
+	const { useEntityProp, store: coreStore } = wp.coreData;
+	const { createElement: h, useMemo, Fragment } = wp.element;
+	const { format: formatDate, dateI18n } = wp.date;
+
+	const selectPostType = select => select(editorStore).getCurrentPostType();
+
+	const useMetaKey = (key, dflt = undefined) => {
+		const postType = useSelect(selectPostType, []);
+		const [meta, setMeta] = useEntityProp('postType', postType, 'meta');
+
+		return [meta[key] || dflt, v => setMeta({[key]: v})];
+	};
+
+	const Panel = () => {
+		const postType = useSelect(selectPostType, []);
+		if (postType !== 'event') return null;
+
+		const [startTimestamp, setStartTimestamp] = useMetaKey('event_start_timestamp');
+		const [endTimestamp, setEndTimestamp] = useMetaKey('event_end_timestamp');
+		const [locName, setLocName] = useMetaKey('event_location_name');
+		const [locCity, setLocCity] = useMetaKey('event_city');
+		const [locState, setLocState] = useMetaKey('event_state');
+		const [locCountry, setLocCountry] = useMetaKey('event_country');
+		const [locStreet, setLocStreet] = useMetaKey('event_street');
+		const [locZip, setLocZip] = useMetaKey('event_zip');
+		const [ticketUrl, setTicketUrl] = useMetaKey('event_tickets_url', '');
+
+		const urlInvalid = useMemo(() => {
+			if (!ticketUrl) return false;
+			try {
+				const u = new URL(ticketUrl);
+				return !(u.protocol === 'http:' || u.protocol === 'https:');
+			} catch (e) { return true; }
+    		}, [ticketUrl]);
+
+		return h(
+			Fragment,
+			{},
+			h(
+				PluginDocumentSettingPanel,
+    				{name: 'phenomena-event-starts', title: 'Event Starts'},
+				h(DateTimePicker, {
+					currentDate: startTimestamp,
+					onChange: v => setStartTimestamp(formatDate('c', v)),
+					is12Hour: true
+				})
+			),
+			h(
+				PluginDocumentSettingPanel,
+    				{name: 'phenomena-event-ends', title: 'Event Ends'},
+
+				h(DateTimePicker, {
+					currentDate: endTimestamp,
+					onChange: v => setEndTimestamp(formatDate('c', v)),
+					is12Hour: true
+				})
+			),
+			h(
+				PluginDocumentSettingPanel,
+    				{name: 'phenomena-event-ticketing', title: 'Event Ticketing'},
+
+				h(TextControl, {
+					label: "Ticket URL",
+					type: 'url',
+					value: ticketUrl,
+					onChange: v => setTicketUrl(v),
+					placeholder: 'https://example.com/buy',
+					help: urlInvalid
+						? 'Please enter a valid http(s) URL.'
+						: 'Public link customers use to purchase tickets.'
+				}),
+			),
+			h(
+				PluginDocumentSettingPanel,
+    				{name: 'phenomena-event-location', title: 'Event Location'},
+
+				h(TextControl, {
+					label: "Name",
+					type: 'string',
+					value: locName,
+					onChange: v => setLocName(v),
+					placeholder: 'e.g. Carnegie Hall',
+					help: "Name of the venue hosting the event"
+				}),
+				h(TextControl, {
+					label: "City",
+					type: 'string',
+					value: locCity,
+					onChange: v => setLocCity(v),
+					placeholder: 'e.g. New York City'
+				}),
+				h(TextControl, {
+					label: "State / Locality",
+					type: 'string',
+					value: locState,
+					onChange: v => setLocState(v),
+					placeholder: 'e.g. NJ',
+				}),
+				h(TextControl, {
+					label: "Street Address",
+					type: 'string',
+					value: locStreet,
+					onChange: v => setLocStreet(v),
+					placeholder: 'e.g. 123 Example Dr.',
+				}),
+				h(TextControl, {
+					label: "ZIP/Postal Code",
+					type: 'string',
+					value: locZip,
+					onChange: v => setLocZip(v),
+					placeholder: 'e.g. 08108',
+				}),
+				h(TextControl, {
+					label: "Country",
+					type: 'string',
+					value: locCountry,
+					onChange: v => setLocCountry(v),
+					placeholder: 'e.g. United States',
+				}),
+			)
+		);
+	};
+
+	registerPlugin('phenomena', { render: Panel });
+})();
+JS);
+	});
+
+
 
 if (!is_admin()) {
 	// The non-admin implementation of event ordering.
@@ -315,24 +552,6 @@ if (!is_admin()) {
 		}
 		return $query_vars;
     });
-
-    // Attempt to put the event date into most WordPress themes without modification.
-    add_filter('get_the_date', function($the_date, $d, $post) {
-        $post_type = is_int($post) ? get_post_type($post) : $post->post_type;
-        if ($post_type === PHENOMENA_POST_TYPE) {
-            $s = phenomena_get_start_date($post);
-            $e = phenomena_get_end_date($post);
-	    if ($s && $e) {
-		return $s->format($d) . ' - ' . $e->format($d);
-            } else if ($e && !$s) {
-                return 'Ends ' . $e->format($d);//date($d, $e);
-	    } else if ($s && !$e) {
-		return $s->format($d);
-            }
-            return date($d, phenomena_get_start_date($post));
-        }
-        return $the_date;
-    }, 10, 3);
 } else {
 	// implements ordering by event_{start,end}_timestamp meta
 	// field as a query var. This is the desired behavior for the Admin
@@ -357,104 +576,25 @@ if (!is_admin()) {
 		return $query_vars;
 	});
 
-	(function() {
-		$bn = basename(__FILE__);
-		$box_key = 'phenomena_event_metadata';
-    	
-		add_action('save_post', function($post_id) use ($bn, $box_key) {
-			if (defined("DOING_AUTOSAVE") && DOING_AUTOSAVE) return;
-		
-			global $post_data;
-			if ($post_data) $data = $post_data;
-			else if ($_POST) $data = $_POST;
-			else if ($_GET) $data = $_GET;
-    	
-			if (current_user_can('edit_post', $post_id)
-				&& PHENOMENA_POST_TYPE === get_post_type($post_id)
-				&& isset($data[$box_key . "_nonce"])
-				&& wp_verify_nonce($data[$box_key . "_nonce"], $bn)) {
-				
-				foreach ([
-					'event_location_name',
-					'event_city',
-					'event_state',
-					'event_country',
-					'event_street',
-					'event_zip',
-					'event_more_info_url'] as $key) {
-					update_post_meta($post_id, $key, phenomena_get($data, $key));
-				}
-		
-				foreach (['event_start_timestamp',
-					'event_end_timestamp'] as $key) {
-					update_post_meta($post_id, $key, parse_html5(phenomena_get($data, $key)));
-				}
-			}
-		});
-    	
-		add_action('add_meta_boxes', function() use ($box_key, $bn) {
-    			add_meta_box($box_key, "Event Details", function() use ($bn, $box_key) {
-				function render_text_field($name, $value, $label, $type='text') {
-    			?>
-    			<div style="display: flex; flex-flow: column nowrap; align-items: flex-start;">
-    			    <div style="padding-bottom: 5px"><?= $label; ?></div>
-    			    <input type="<?= $type; ?>" name="<?= $name; ?>" value="<?= $value; ?>">
-    			</div>
-    			<?php
-    				}
-    	
-				wp_nonce_field($bn, $box_key . '_nonce');
-    	
-				global $post;
-    			
-    			$post_id = $post->ID;
-    			$start = get_post_meta($post_id, 'event_start_timestamp', true);
-    			$end = get_post_meta($post_id, 'event_end_timestamp', true);
-    			$city = get_post_meta($post_id, 'event_city', true);
-    			$state = get_post_meta($post_id, 'event_state', true);
-    			$country = get_post_meta($post_id, 'event_country', true);
-    			$street = get_post_meta($post_id, 'event_street', true);
-    			$zip = get_post_meta($post_id, 'event_zip', true);
-    			$loc_name = get_post_meta($post_id, 'event_location_name', true);
-    			render_text_field("event_start_timestamp", parse_utc($start), 'Start', 'datetime-local');
-    	        ?><br /><?php
-    			render_text_field("event_end_timestamp", parse_utc($end), 'End', 'datetime-local');
-    	        ?><br /><?php
-    			render_text_field("event_location_name", $loc_name, 'Location Name', 'text');
-    	        ?><br /><?php
-    			render_text_field("event_street", $street, 'Street', 'text');
-    	        ?><br /><?php
-    			render_text_field("event_city", $city, 'City', 'text');
-    	        ?><br /><?php
-    			render_text_field("event_state", $state, 'State', 'text');
-    	        ?><br /><?php
-    			render_text_field("event_zip", $zip, 'Zip', 'text');
-    	        ?><br /><?php
-    			render_text_field("event_country", $country, 'Country', 'text');
-    	        ?><br /><?php
-    			render_text_field('event_more_info_url', get_post_meta($post_id, 'event_more_info_url', true), 'More Info URL', 'text');
-    		}, PHENOMENA_POST_TYPE, 'side', 'core');
-    	});
-    })();
-
-    add_filter('manage_' . PHENOMENA_POST_TYPE . '_posts_columns', function($columns) {
-        $columns['event_start_timestamp'] = 'Starts';
-        $columns['event_end_timestamp'] = 'Ends';
-        return $columns;
-    });
+	add_filter('manage_' . PHENOMENA_POST_TYPE . '_posts_columns', function($columns) {
+		$columns['event_start_timestamp'] = 'Starts';
+		$columns['event_end_timestamp'] = 'Ends';
+		return $columns;
+	});
     
-    add_filter('manage_edit-' . PHENOMENA_POST_TYPE . '_sortable_columns', function($columns) {
-        $columns['event_start_timestamp'] = 'event_start_timestamp';
-        $columns['event_end_timestamp'] = 'event_end_timestamp';
-        return $columns;
-    });
+	add_filter('manage_edit-' . PHENOMENA_POST_TYPE . '_sortable_columns', function($columns) {
+		$columns['event_start_timestamp'] = 'event_start_timestamp';
+		$columns['event_end_timestamp'] = 'event_end_timestamp';
+		return $columns;
+	});
     
-    add_action('manage_' . PHENOMENA_POST_TYPE . '_posts_custom_column', function($column_name, $post_id) {
-        if ($column_name === 'event_start_timestamp' || $column_name === 'event_end_timestamp') {
-            $datetime_format = get_option('date_format') . ', ' . get_option('time_format');
-            $ord = parse_utc(get_post_meta($post_id, $column_name, true), $datetime_format);
-            ?><div><?= $ord; ?></div><?php
-        }
-    }, 10, 2);
+	add_action('manage_' . PHENOMENA_POST_TYPE . '_posts_custom_column', function($column_name, $post_id) {
+		if ($column_name === 'event_start_timestamp' || $column_name === 'event_end_timestamp') {
+			$datetime_format = get_option('date_format') . ', ' . get_option('time_format');
+			$dt = phenomena_parse_internal_date(phenomena_get_post_meta($post_id, $column_name));
+			$ord = $dt->format($datetime_format);
+			?><div><?= $ord; ?></div><?php
+		}
+	}, 10, 2);
 }
 

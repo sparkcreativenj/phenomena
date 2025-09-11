@@ -82,7 +82,7 @@ function phenomena_get_upcoming_events($offset = 0, $count = 10) {
  */
 function phenomena_get_start_date($event) {
 	if (!$event) return null;
-	return parse_utc_to_object(phenomena_get_post_meta($event, 'event_start_timestamp'));
+	return phenomena_parse_internal_date(phenomena_get_post_meta($event, 'event_start_timestamp'));
 }
 
 /*
@@ -94,7 +94,7 @@ function phenomena_get_start_date($event) {
  */
 function phenomena_get_end_date($event) {
 	if (!$event) return null;
-	return parse_utc_to_object(phenomena_get_post_meta($event, 'event_end_timestamp'));
+	return phenomena_parse_internal_date(phenomena_get_post_meta($event, 'event_end_timestamp'));
 }
 
 // The rest of the functions here are like phenomena_get_{start,end}_date,

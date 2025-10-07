@@ -95,7 +95,7 @@ add_action('init', function() {
 			'single' => true,
 			'auth_callback' => fn() => current_user_can('edit_posts'),
 			'default' => '',
-			'show_in_rest' => true
+			'show_in_rest' => true,
 		]);
 	}
 
@@ -283,8 +283,9 @@ JS);
                         $zip = phenomena_get_zip($post);
 			$loc_name = phenomena_get_location_name($post);
 
-			$address = join(', ', [$street, $city, $state, $country, $zip]);
-			$google_maps_link = 'https://www.google.com/maps/search/?api=1&query=' . urlencode( $address );
+			$address_parts = [$street, $city, $state, $country, $zip];
+			$address_parts = array_filter($address_parts, fn($x) => $x && strlen($x) > 0);
+			$google_maps_link = count($address_parts) > 0 ? 'https://www.google.com/maps/search/?api=1&query=' . urlencode(join(', ', $address_parts)) : null;
 
 			ob_start();
 ?>
@@ -308,7 +309,7 @@ JS);
 		['wp-blocks', 'wp-element', 'wp-components', 'wp-block-editor'], <<<'JS'
 (function({blocks, blockEditor, element, components}) {
 	const { createElement: el, Fragment } = element;
-	const { useBlockProps, InspectorControls } = blockEditor;
+	const { useBlockProps, InnerBlocks, InspectorControls } = blockEditor;
 	const { PanelBody, TextControl } = components;
 
 	function Edit({ attributes, setAttributes }) {
@@ -316,13 +317,20 @@ JS);
 
 		return el(Fragment, null, ...[
 			el(InspectorControls),
-			el('a', { ...blockProps }, 'Tickets Link')
+			el('a', { ...blockProps }, 
+				el(InnerBlocks, {
+					template: [['core/paragraph', {content: 'Get Tickets'}]],
+					templateLock: false,
+					allowedBlocks: ['core/heading', 'core/paragraph'],
+					orientation: 'vertical'
+				})
+			)
 		]);
 	}
 
 	blocks.registerBlockType('phenomena/event-tickets', {
 		edit: Edit,
-		save: () => null // dynamic block
+		save: () => el(InnerBlocks.Content, {}) // dynamic block
 	});
 })(window.wp);
 JS);
@@ -340,6 +348,12 @@ JS);
 				'meta'   => 'event_tickets_url',
 			],
 		],
+		'template' => [
+			['core/paragraph', [
+				'placeholder' => 'Link Text Here...'
+			]],
+		],
+		'template_lock' => 'all', // or 'insert' or false
 		'editor_script_handles' => [
 			'phenomena-block-event-tickets'
 		],
@@ -350,7 +364,7 @@ JS);
 			ob_start();
 			if ($url) {
 ?>
-	<a <?= get_block_wrapper_attributes(["style" => "display: inline-block;"]); ?> href="<?= $url; ?>" target="_blank">Tickets</a>
+	<a <?= get_block_wrapper_attributes(["style" => "display: inline-block;"]); ?> href="<?= $url; ?>" target="_blank"><?= do_blocks($content); ?></a>
 <?php
 			}
 			$contents = ob_get_contents();
@@ -592,7 +606,7 @@ if (!is_admin()) {
 		if ($column_name === 'event_start_timestamp' || $column_name === 'event_end_timestamp') {
 			$datetime_format = get_option('date_format') . ', ' . get_option('time_format');
 			$dt = phenomena_parse_internal_date(phenomena_get_post_meta($post_id, $column_name));
-			$ord = $dt->format($datetime_format);
+			$ord = $dt ? $dt->format($datetime_format) : '';
 			?><div><?= $ord; ?></div><?php
 		}
 	}, 10, 2);
